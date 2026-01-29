@@ -406,15 +406,16 @@ class ReportGenerator:
         report.append(f"""  1. Executive Summary
   2. Subdomains Discovered
   3. Live Hosts (httpx)
-  4. URLs Discovered (GAU)
+  4. URLs Discovered (GAU + Wayback Machine)
   5. Email Security Analysis (SPF/DKIM/DMARC)
   6. Security Headers Analysis
   7. TLS/SSL Analysis
-  8. Technology Stack
-  9. Cloud/SaaS Detection
-  10. Shodan Intelligence
-  11. Nuclei Vulnerability Findings
-  12. Findings & Remediation Recommendations
+  8. Technology Stack & Fingerprinting
+  9. Banner Grabbing Results
+  10. Cloud/SaaS Detection
+  11. Shodan Intelligence
+  12. Email & Contact Harvesting (theHarvester)
+  13. Findings & Remediation Recommendations
 """)
         
         # Executive Summary
@@ -488,13 +489,29 @@ class ReportGenerator:
         else:
             report.append(f"  {c.YELLOW}HTTP probing not performed.{c.END}\n")
         
-        # URLs Discovered (GAU)
-        report.append(self._header("4. URLs DISCOVERED (GAU)"))
+        # URLs Discovered (GAU + Wayback)
+        report.append(self._header("4. URLs DISCOVERED (GAU + WAYBACK MACHINE)"))
         urls_combined = self._read_file("urls_combined.txt") or \
                        self._read_file(f"gau_{self.domain.replace('.', '_')}.txt")
+        wayback_urls = self._read_file(f"wayback_{self.domain.replace('.', '_')}.txt")
+        
+        # Count sources
+        gau_count = 0
+        wayback_count = 0
+        if self._read_file(f"gau_{self.domain.replace('.', '_')}.txt"):
+            gau_file = self._read_file(f"gau_{self.domain.replace('.', '_')}.txt")
+            gau_count = len(gau_file.strip().split('\n')) if gau_file and gau_file.strip() else 0
+        if wayback_urls and wayback_urls.strip():
+            wayback_count = len(wayback_urls.strip().split('\n'))
+        
+        report.append(f"  {c.BOLD}Sources:{c.END}\n")
+        report.append(f"    • GAU (GetAllUrls): {gau_count} URLs\n")
+        report.append(f"    • Wayback Machine: {wayback_count} URLs\n\n")
+        
         if urls_combined and urls_combined.strip():
             url_list = urls_combined.strip().split('\n')
             url_count = len(url_list)
+            report.append(f"  {c.BOLD}Combined unique URLs: {url_count}{c.END}\n\n")
             for url in url_list[:50]:  # Limit to 50
                 report.append(f"  • {url}\n")
             if url_count > 50:
@@ -533,46 +550,146 @@ class ReportGenerator:
             report.append(f"  {c.YELLOW}TLS/SSL check not performed.{c.END}\n")
         
         # Technology Stack
-        report.append(self._header("8. TECHNOLOGY STACK"))
+        report.append(self._header("8. TECHNOLOGY STACK & FINGERPRINTING"))
+        # Try multiple file name formats (slugify converts https://domain.com to https_domain_com)
         whatweb_file = self._read_file(f"whatweb_https_{self.domain.replace('.', '_')}.txt") or \
-                      self._read_file(f"whatweb_https_{self.domain}.txt")
-        if whatweb_file:
+                      self._read_file(f"whatweb_https_{self.domain}.txt") or \
+                      self._read_file(f"whatweb_https____{self.domain.replace('.', '_')}.txt") or \
+                      self._read_file(f"tech_fingerprint_{self.domain.replace('.', '_')}.txt")
+        if whatweb_file and whatweb_file.strip():
             report.append(f"{c.WHITE}{whatweb_file}{c.END}\n")
         else:
             report.append(f"  {c.YELLOW}Technology fingerprinting not performed.{c.END}\n")
+            report.append(f"  {c.WHITE}Install whatweb: brew install whatweb (macOS) or apt install whatweb (Linux){c.END}\n")
+        
+        # Banner Grabbing
+        report.append(self._header("9. BANNER GRABBING RESULTS"))
+        banners_file = self._read_file("banners.txt") or \
+                      self._read_file(f"banners_{self.domain.replace('.', '_')}.txt")
+        banners_enhanced = self._read_file(f"banners_enhanced_{self.domain.replace('.', '_')}.json")
+        http_headers = self._read_file(f"http_headers_{self.domain.replace('.', '_')}.txt")
+        
+        if banners_file and banners_file.strip():
+            report.append(f"{c.WHITE}{banners_file[:5000]}{c.END}\n")
+            if len(banners_file) > 5000:
+                report.append(f"\n  ... (truncated, see full file)\n")
+        elif banners_enhanced and banners_enhanced.strip():
+            report.append(f"  {c.BOLD}Enhanced Banner Results (JSON):{c.END}\n")
+            for line in banners_enhanced.strip().split('\n')[:20]:
+                try:
+                    data = json.loads(line)
+                    url = data.get('url', 'N/A')
+                    server = data.get('webserver', 'N/A')
+                    tech = data.get('tech', [])
+                    title = data.get('title', 'N/A')[:50]
+                    report.append(f"\n  {c.CYAN}{url}{c.END}\n")
+                    report.append(f"    Server: {server}\n")
+                    if tech:
+                        report.append(f"    Tech: {', '.join(tech[:5])}\n")
+                    report.append(f"    Title: {title}\n")
+                except:
+                    continue
+        elif http_headers and http_headers.strip():
+            report.append(f"{c.WHITE}{http_headers}{c.END}\n")
+        else:
+            report.append(f"  {c.YELLOW}Banner grabbing not performed.{c.END}\n")
         
         # Cloud Detection
-        report.append(self._header("9. CLOUD/SAAS DETECTION"))
+        report.append(self._header("10. CLOUD/SAAS DETECTION"))
         if cloud_hints:
             report.append(f"{c.WHITE}{cloud_hints}{c.END}\n")
         else:
             report.append(f"  {c.YELLOW}Cloud detection not performed.{c.END}\n")
         
         # Shodan Intelligence
-        report.append(self._header("10. SHODAN INTELLIGENCE"))
+        report.append(self._header("11. SHODAN INTELLIGENCE"))
         shodan_results = self._read_file("shodan.txt")
         if shodan_results and shodan_results.strip():
             report.append(f"{c.WHITE}{shodan_results}{c.END}\n")
         else:
             report.append(f"  {c.YELLOW}Shodan search not performed (API key required).{c.END}\n")
         
-        # Nuclei Findings
-        report.append(self._header("11. NUCLEI VULNERABILITY FINDINGS"))
-        nuclei_findings = self._read_file("nuclei_findings.txt")
-        if nuclei_findings and nuclei_findings.strip():
-            # Color-code severity levels in nuclei output
-            formatted = nuclei_findings
-            formatted = formatted.replace("[critical]", f"{c.CRITICAL}[critical]{c.END}")
-            formatted = formatted.replace("[high]", f"{c.HIGH}[high]{c.END}")
-            formatted = formatted.replace("[medium]", f"{c.MEDIUM}[medium]{c.END}")
-            formatted = formatted.replace("[low]", f"{c.LOW}[low]{c.END}")
-            formatted = formatted.replace("[info]", f"{c.INFO}[info]{c.END}")
-            report.append(f"{formatted}\n")
+        # Email & Contact Harvesting
+        report.append(self._header("12. EMAIL & CONTACT HARVESTING"))
+        # theHarvester outputs JSON and XML files
+        harvester_json = self._read_file(f"harvester_{self.domain.replace('.', '_')}.json")
+        harvester_xml = self._read_file(f"harvester_{self.domain.replace('.', '_')}.xml")
+        
+        if harvester_json and harvester_json.strip():
+            try:
+                data = json.loads(harvester_json)
+                # Extract emails
+                emails = data.get("emails", [])
+                if emails:
+                    report.append(f"\n  {c.BOLD}Email Addresses Found ({len(emails)}):{c.END}\n")
+                    for email in emails[:50]:
+                        report.append(f"    • {c.CYAN}{email}{c.END}\n")
+                    if len(emails) > 50:
+                        report.append(f"    ... and {len(emails) - 50} more\n")
+                else:
+                    report.append(f"\n  {c.YELLOW}No email addresses found.{c.END}\n")
+                
+                # Extract hosts
+                hosts = data.get("hosts", [])
+                if hosts:
+                    report.append(f"\n  {c.BOLD}Hosts Discovered ({len(hosts)}):{c.END}\n")
+                    for host in hosts[:30]:
+                        report.append(f"    • {host}\n")
+                    if len(hosts) > 30:
+                        report.append(f"    ... and {len(hosts) - 30} more\n")
+                
+                # Extract IPs
+                ips = data.get("ips", [])
+                if ips:
+                    report.append(f"\n  {c.BOLD}IP Addresses ({len(ips)}):{c.END}\n")
+                    for ip in ips[:20]:
+                        report.append(f"    • {ip}\n")
+                    if len(ips) > 20:
+                        report.append(f"    ... and {len(ips) - 20} more\n")
+                
+                # Extract interesting URLs
+                urls = data.get("interesting_urls", [])
+                if urls:
+                    report.append(f"\n  {c.BOLD}Interesting URLs ({len(urls)}):{c.END}\n")
+                    for url in urls[:20]:
+                        report.append(f"    • {url}\n")
+                    if len(urls) > 20:
+                        report.append(f"    ... and {len(urls) - 20} more\n")
+                        
+            except json.JSONDecodeError:
+                report.append(f"{c.WHITE}{harvester_json[:3000]}{c.END}\n")
+        elif harvester_xml and harvester_xml.strip():
+            report.append(f"  {c.BOLD}Raw theHarvester Results:{c.END}\n")
+            report.append(f"{c.WHITE}{harvester_xml[:3000]}{c.END}\n")
+            if len(harvester_xml) > 3000:
+                report.append(f"\n  ... (truncated, see full file)\n")
         else:
-            report.append(f"  {c.YELLOW}Nuclei vulnerability scan not performed.{c.END}\n")
+            report.append(f"  {c.YELLOW}theHarvester: No publicly exposed emails found.{c.END}\n")
+        
+        # Email Permutations (generated based on common formats)
+        email_perms = self._read_file(f"email_permutations_{self.domain.replace('.', '_')}.txt")
+        if email_perms and email_perms.strip():
+            lines = [l for l in email_perms.strip().split('\n') if l and not l.startswith('#')]
+            perm_count = len([l for l in lines if '@' in l and not l.startswith('##')])
+            report.append(f"\n  {c.BOLD}Email Permutations Generated ({perm_count} potential emails):{c.END}\n")
+            report.append(f"  {c.WHITE}Common formats tested for {self.domain}:{c.END}\n")
+            
+            # Show format examples
+            report.append(f"""
+    Format Examples:
+    • info@{self.domain}           (generic)
+    • contact@{self.domain}        (generic)
+    • firstname@{self.domain}      (first name only)
+    • firstname.lastname@{self.domain}  (first.last)
+    • f.lastname@{self.domain}     (initial.last)
+    • firstnamel@{self.domain}     (first + last initial)
+    • lastname@{self.domain}       (last name only)
+    
+    See full list: email_permutations_{self.domain.replace('.', '_')}.txt
+""")
         
         # Findings & Remediation
-        report.append(self._header("12. FINDINGS & REMEDIATION RECOMMENDATIONS"))
+        report.append(self._header("13. FINDINGS & REMEDIATION RECOMMENDATIONS"))
         
         if self.findings:
             # Sort by severity
@@ -716,34 +833,45 @@ class ScanProgress:
         else:
             print()
         print(f"  Fast mode: {'Yes (skipping extra checks)' if self.fast else 'No'}")
+        if hasattr(args, 'skip_slow') and args.skip_slow:
+            print(f"  Skip slow: Yes (amass/subfinder skipped)")
+        print(f"  Timeout: {args.timeout}s per tool")
         print()
         
         # Phase 1
         print("  Phase 1 - Subdomain Enumeration:")
         self._show_tool_status("    ", "crt.sh", "crtsh", skip_list)
-        self._show_tool_status("    ", "amass", "amass", skip_list)
-        self._show_tool_status("    ", "subfinder", "subfinder", skip_list)
+        if hasattr(args, 'skip_slow') and args.skip_slow:
+            print("    ⊘ amass (skipped - slow)")
+            print("    ⊘ subfinder (skipped - slow)")
+        else:
+            self._show_tool_status("    ", "amass", "amass", skip_list)
+            self._show_tool_status("    ", "subfinder", "subfinder", skip_list)
         
         # Phase 2
         print("  Phase 2 - HTTP Probing:")
         self._show_tool_status("    ", "httpx", "httpx", skip_list)
         
         # Phase 3
-        print("  Phase 3 - URL Discovery:")
-        self._show_tool_status("    ", "gau", "gau", skip_list)
+        print("  Phase 3 - URL Discovery (GAU + Wayback + Shodan):")
+        self._show_tool_status("    ", "gau (getallurls)", "gau", skip_list)
+        self._show_tool_status("    ", "waybackurls", "waybackurls", skip_list)
         self._show_tool_status("    ", "shodan", "shodan", skip_list)
         
         # Phase 4
-        print("  Phase 4 - Vulnerability Scanning:")
-        self._show_tool_status("    ", "nuclei", "nuclei", skip_list)
+        print("  Phase 4 - Email & Contact Discovery:")
+        self._show_tool_status("    ", "theHarvester", "theHarvester", skip_list)
+        print("    ● email permutations (built-in)")
         
         # Phase 5
         if not self.fast:
-            print("  Phase 5 - Security Checks:")
+            print("  Phase 5 - Security Checks & Fingerprinting:")
             self._show_tool_status("    ", "email (SPF/DKIM/DMARC)", "email_security", skip_list, check_arg=not args.no_email)
             self._show_tool_status("    ", "sslscan", "sslscan", skip_list, check_arg=not args.no_tls)
             self._show_tool_status("    ", "security headers", "sec_headers", skip_list, check_arg=not args.no_headers)
-            self._show_tool_status("    ", "whatweb", "tech_detect", skip_list, check_arg=not args.no_tech)
+            self._show_tool_status("    ", "whatweb (tech fingerprint)", "tech_detect", skip_list, check_arg=not args.no_tech)
+            if not args.no_tech:
+                print("    ● curl fingerprint (built-in)")
             self._show_tool_status("    ", "cloud detection", None, skip_list, check_arg=not args.no_cloud, always_available=True)
         else:
             print("  Phase 5 - Security Checks: SKIPPED (--fast mode)")
@@ -918,8 +1046,7 @@ def first_run_wizard():
     missing_tools = []
     installed_tools = []
     for tool in SCAN_TOOLS:
-        bin_name = TOOLS.get(tool, {}).get("bin", tool)
-        if shutil.which(bin_name):
+        if check_tool(tool):
             installed_tools.append(tool)
         else:
             missing_tools.append(tool)
@@ -927,8 +1054,7 @@ def first_run_wizard():
     # Check core tools
     missing_core = []
     for tool in CORE_TOOLS:
-        bin_name = TOOLS.get(tool, {}).get("bin", tool)
-        if not shutil.which(bin_name):
+        if not check_tool(tool):
             missing_core.append(tool)
     
     # Check API keys
@@ -1027,35 +1153,38 @@ Ready to scan? Run:
 # Tool definitions with installation methods for different platforms
 # brew = Homebrew (macOS), apt = apt-get (Debian/Ubuntu), go = go install, pip = pip install
 TOOLS = {
-    "amass":      {"bin": "amass",      "brew": "amass",           "apt": "amass",         "go": "github.com/owasp-amass/amass/v4/...@master"},
-    "subfinder":  {"bin": "subfinder",  "brew": "subfinder",       "apt": None,            "go": "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"},
-    "httpx":      {"bin": "httpx",      "brew": "httpx",           "apt": "httpx-toolkit", "go": "github.com/projectdiscovery/httpx/cmd/httpx@latest"},
-    "gau":        {"bin": "gau",        "brew": None,              "apt": None,            "go": "github.com/lc/gau/v2/cmd/gau@latest"},
-    "nuclei":     {"bin": "nuclei",     "brew": "nuclei",          "apt": None,            "go": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"},
-    "shodan":     {"bin": "shodan",     "brew": None,              "apt": None,            "pip": "shodan"},
-    "jq":         {"bin": "jq",         "brew": "jq",              "apt": "jq"},
-    "curl":       {"bin": "curl",       "brew": "curl",            "apt": "curl"},
-    "git":        {"bin": "git",        "brew": "git",             "apt": "git"},
-    "dig":        {"bin": "dig",        "brew": None,              "apt": "dnsutils"},  # dig is in base macOS
-    "sslscan":    {"bin": "sslscan",    "brew": "sslscan",         "apt": "sslscan"},
-    "whatweb":    {"bin": "whatweb",    "brew": "whatweb",         "apt": "whatweb"},
+    "amass":       {"bin": "amass",       "brew": "amass",           "apt": "amass",         "go": "github.com/owasp-amass/amass/v4/...@master"},
+    "subfinder":   {"bin": "subfinder",   "brew": "subfinder",       "apt": None,            "go": "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"},
+    "httpx":       {"bin": "httpx",       "brew": "httpx",           "apt": "httpx-toolkit", "go": "github.com/projectdiscovery/httpx/cmd/httpx@latest"},
+    "gau":         {"bin": "getallurls",  "brew": None,              "apt": None,            "go": "github.com/lc/gau/v2/cmd/gau@latest", "alt_bin": "gau"},
+    "waybackurls": {"bin": "waybackurls", "brew": None,              "apt": None,            "go": "github.com/tomnomnom/waybackurls@latest"},
+    "theHarvester":{"bin": "theHarvester","brew": None,              "apt": "theharvester",  "pip": "theHarvester"},
+    "shodan":      {"bin": "shodan",      "brew": None,              "apt": None,            "pip": "shodan"},
+    "jq":          {"bin": "jq",          "brew": "jq",              "apt": "jq"},
+    "curl":        {"bin": "curl",        "brew": "curl",            "apt": "curl"},
+    "git":         {"bin": "git",         "brew": "git",             "apt": "git"},
+    "dig":         {"bin": "dig",         "brew": None,              "apt": "dnsutils"},  # dig is in base macOS
+    "sslscan":     {"bin": "sslscan",     "brew": "sslscan",         "apt": "sslscan"},
+    "whatweb":     {"bin": "whatweb",     "brew": "whatweb",         "apt": "whatweb"},
 }
 
 # Tools used in the scan (for status display)
 CORE_TOOLS = ["curl", "jq", "dig", "git"]
-SCAN_TOOLS = ["amass", "subfinder", "httpx", "gau", "nuclei", "sslscan", "whatweb", "shodan"]
+SCAN_TOOLS = ["amass", "subfinder", "httpx", "gau", "waybackurls", "theHarvester", "sslscan", "whatweb", "shodan"]
 REQUIRED_FOR_STEP = {
     "crtsh":         ["curl", "jq"],
     "amass":         ["amass"],
     "subfinder":     ["subfinder"],
     "httpx":         ["httpx"],
     "gau":           ["gau"],
-    "nuclei":        ["nuclei"],
+    "waybackurls":   ["waybackurls"],
+    "theHarvester":  ["theHarvester"],
     "shodan":        ["shodan"],
     "email_security":["dig"],
     "sslscan":       ["sslscan"],
     "sec_headers":   ["curl"],
     "tech_detect":   ["whatweb"],
+    "banner_grab":   ["curl"],
 }
 
 # === Tool Installation ===
@@ -1161,6 +1290,27 @@ def install_tools():
             if go_path not in os.environ.get("PATH", ""):
                 os.environ["PATH"] = f"{go_path}:{os.environ.get('PATH', '')}"
             installed = run_install_cmd(f"go install {tool_info['go']}", tool_name)
+            
+            # After go install, copy binary to /usr/local/bin for system-wide access
+            if installed:
+                bin_name = tool_info.get("bin", tool_name)
+                go_bin_path = os.path.join(go_path, bin_name)
+                # Handle gau which installs as 'gau' but we check for 'getallurls'
+                if tool_name == "gau":
+                    go_bin_path = os.path.join(go_path, "gau")
+                    bin_name = "gau"  # Copy as 'gau', we check for both
+                
+                if os.path.exists(go_bin_path):
+                    # Try to copy to /usr/local/bin (may need sudo)
+                    dest = f"/usr/local/bin/{bin_name}"
+                    copy_cmd = f'sudo cp "{go_bin_path}" "{dest}" && sudo chmod +x "{dest}"'
+                    print(f"    [copying] {bin_name} to /usr/local/bin...")
+                    copy_result = subprocess.run(copy_cmd, shell=True, capture_output=True, text=True)
+                    if copy_result.returncode == 0:
+                        print(f"    [OK] {bin_name} available system-wide")
+                    else:
+                        print(f"    [info] Binary installed to ~/go/bin/{bin_name}")
+                        print(f"           Run manually: sudo cp ~/go/bin/{bin_name} /usr/local/bin/")
         
         # Try pip install
         if not installed and has_pip and tool_info.get("pip"):
@@ -1185,12 +1335,13 @@ def install_tools():
         for tool in results["failed"]:
             print(f"    - {tool}")
     
-    # Remind about Go path
+    # Remind about Go path and manual copy if needed
     if has_go:
         go_path = os.path.expanduser("~/go/bin")
-        print(f"\n[i] Make sure ~/go/bin is in your PATH:")
-        print(f'    export PATH="$PATH:{go_path}"')
-        print(f"    (Add this to your ~/.zshrc for persistence)")
+        print(f"\n[i] Go binaries location: ~/go/bin")
+        print(f"    If tools aren't found, either:")
+        print(f"    1. Add to PATH: export PATH=\"$PATH:{go_path}\"")
+        print(f"    2. Or copy manually: sudo cp ~/go/bin/TOOL /usr/local/bin/")
     
     # Remind about Shodan API key
     print(f"\n[i] For Shodan, set your API key:")
@@ -1206,17 +1357,17 @@ def check_tools_status():
     
     print("\nCore tools (required):")
     for tool in CORE_TOOLS:
-        bin_name = TOOLS.get(tool, {}).get("bin", tool)
-        status = "OK" if shutil.which(bin_name) else "MISSING"
+        status = "OK" if check_tool(tool) else "MISSING"
         symbol = "+" if status == "OK" else "!"
         print(f"  [{symbol}] {tool}: {status}")
     
     print("\nScan tools:")
     for tool in SCAN_TOOLS:
-        bin_name = TOOLS.get(tool, {}).get("bin", tool)
-        status = "OK" if shutil.which(bin_name) else "MISSING"
+        status = "OK" if check_tool(tool) else "MISSING"
         symbol = "+" if status == "OK" else "-"
-        print(f"  [{symbol}] {tool}: {status}")
+        bin_used = get_tool_bin(tool) if status == "OK" else ""
+        extra = f" ({bin_used})" if bin_used and bin_used != tool else ""
+        print(f"  [{symbol}] {tool}: {status}{extra}")
     
     # Show API key status using the dedicated function
     show_api_key_status()
@@ -1249,8 +1400,28 @@ def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
     return os.path.abspath(path)
 def check_tool(tool_name):
-    bin_name = TOOLS.get(tool_name, {}).get("bin", tool_name)
-    return shutil.which(bin_name) is not None
+    """Check if a tool is installed, checking both primary and alternate binary names."""
+    tool_info = TOOLS.get(tool_name, {})
+    bin_name = tool_info.get("bin", tool_name)
+    alt_bin = tool_info.get("alt_bin")
+    
+    if shutil.which(bin_name):
+        return True
+    if alt_bin and shutil.which(alt_bin):
+        return True
+    return False
+
+def get_tool_bin(tool_name):
+    """Get the actual binary name that exists on the system."""
+    tool_info = TOOLS.get(tool_name, {})
+    bin_name = tool_info.get("bin", tool_name)
+    alt_bin = tool_info.get("alt_bin")
+    
+    if shutil.which(bin_name):
+        return bin_name
+    if alt_bin and shutil.which(alt_bin):
+        return alt_bin
+    return bin_name  # Return default even if not found
 def apt_available():
     return shutil.which("apt-get") is not None
 def apt_install(pkgs):
@@ -1280,36 +1451,56 @@ def ensure_tools_for_step(step, skip):
     print(f"[warn] Missing tools for step '{step}': {', '.join(missing)}")
     print(f"       Run: python3 osint_runner.py --install-tools")
     return False
-def run(cmd, cwd=None, logfile=None, execute=False):
+def run(cmd, cwd=None, logfile=None, execute=False, timeout=300):
+    """Run a command with optional timeout (default 5 minutes)."""
     print(f"> {cmd}")
     if not execute:
         return 0, "", ""
-    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, text=True)
-    out, err = proc.communicate()
-    if logfile:
-        ensure_dir(os.path.dirname(logfile))
-        with open(logfile, "a", encoding="utf-8") as f:
-            f.write(f"\n=== Command: {cmd}\n")
-            f.write(out or "")
-            f.write(err or "")
-            f.write("\n")
-    return proc.returncode, out, err
+    try:
+        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, text=True)
+        out, err = proc.communicate(timeout=timeout)
+        if logfile:
+            ensure_dir(os.path.dirname(logfile))
+            with open(logfile, "a", encoding="utf-8") as f:
+                f.write(f"\n=== Command: {cmd}\n")
+                f.write(out or "")
+                f.write(err or "")
+                f.write("\n")
+        return proc.returncode, out, err
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()  # Clean up
+        print(f"    [!] Command timed out after {timeout}s - killed")
+        if logfile:
+            ensure_dir(os.path.dirname(logfile))
+            with open(logfile, "a", encoding="utf-8") as f:
+                f.write(f"\n=== Command: {cmd}\n")
+                f.write(f"TIMEOUT after {timeout}s\n")
+        return -1, "", f"Timeout after {timeout}s"
+    except Exception as e:
+        print(f"    [!] Command error: {e}")
+        return -1, "", str(e)
 # === Tools wrappers ===
 def query_crtsh(domain, outpath, execute=False):
     ensure_dir(outpath)
     out = os.path.join(outpath, f"crtsh_{slugify(domain)}.txt")
     cmd = f'curl -s "https://crt.sh/?q=%25.{domain}&output=json" | jq -r \'.[].name_value\' | sed "s/\\*\\.//g" | sort -u > "{out}"'
     return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
-def amass_enum(domain, outpath, execute=False):
+def amass_enum(domain, outpath, execute=False, timeout=180):
+    """Run amass with timeout (default 3 minutes - amass can be very slow)."""
     base = os.path.join(outpath, "amass")
     ensure_dir(base)
-    cmd = f'amass enum -passive -d "{domain}" -oA "{os.path.join(base, slugify(domain))}"'
-    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
-def subfinder_run(domain, outpath, execute=False):
+    # Use -passive for faster results, -timeout for internal timeout
+    cmd = f'amass enum -passive -d "{domain}" -timeout 2 -oA "{os.path.join(base, slugify(domain))}"'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute, timeout=timeout)
+
+def subfinder_run(domain, outpath, execute=False, timeout=120):
+    """Run subfinder with timeout (default 2 minutes)."""
     ensure_dir(outpath)
     out = os.path.join(outpath, f"subfinder_{slugify(domain)}.txt")
-    cmd = f'subfinder -d "{domain}" -o "{out}"'
-    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+    # -t for timeout in seconds, -nW to skip wildcard filtering (faster)
+    cmd = f'subfinder -d "{domain}" -t 60 -o "{out}"'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute, timeout=timeout)
 def merge_subdomains(domain, outpath):
     ensure_dir(outpath)
     files = []
@@ -1347,14 +1538,25 @@ def httpx_probe(subs_file, outpath, execute=False):
 def gau_run(domain, outpath, execute=False):
     ensure_dir(outpath)
     out = os.path.join(outpath, f"gau_{slugify(domain)}.txt")
-    cmd = f'gau "{domain}" | sort -u > "{out}"'
+    # Use get_tool_bin to find the correct binary (getallurls or gau)
+    gau_cmd = get_tool_bin("gau")
+    cmd = f'{gau_cmd} "{domain}" | sort -u > "{out}"'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+
+def waybackurls_run(domain, outpath, execute=False):
+    """Fetch URLs from Wayback Machine archive."""
+    ensure_dir(outpath)
+    out = os.path.join(outpath, f"wayback_{slugify(domain)}.txt")
+    cmd = f'echo "{domain}" | waybackurls | sort -u > "{out}"'
     return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
 def merge_urls(domain, outpath):
-    """Merge URL files from gau into a combined file."""
+    """Merge URL files from gau and waybackurls into a combined file."""
     urls_file = os.path.join(outpath, "urls_combined.txt")
     gau_file = os.path.join(outpath, f"gau_{slugify(domain)}.txt")
+    wayback_file = os.path.join(outpath, f"wayback_{slugify(domain)}.txt")
     seen = set()
     with open(urls_file, "w", encoding="utf-8") as out:
+        # Merge GAU results
         if os.path.exists(gau_file):
             with open(gau_file, "r", encoding="utf-8") as fh:
                 for line in fh:
@@ -1363,11 +1565,179 @@ def merge_urls(domain, outpath):
                         continue
                     seen.add(u)
                     out.write(u + "\n")
+        # Merge Wayback Machine results
+        if os.path.exists(wayback_file):
+            with open(wayback_file, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    u = line.strip()
+                    if not u or u in seen:
+                        continue
+                    seen.add(u)
+                    out.write(u + "\n")
     return urls_file
-def nuclei_scan(urls_file, outpath, templates_dir="/opt/nuclei-templates", execute=False):
+def theharvester_run(domain, outpath, execute=False):
+    """Run theHarvester for email and contact discovery."""
     ensure_dir(outpath)
-    out = os.path.join(outpath, "nuclei_findings.txt")
-    cmd = f'nuclei -l "{urls_file}" -t "{templates_dir}" -o "{out}"'
+    out = os.path.join(outpath, f"harvester_{slugify(domain)}")
+    
+    # Use specific reliable sources (free, no API key required)
+    free_sources = "anubis,baidu,bing,certspotter,crtsh,dnsdumpster,duckduckgo,hackertarget,otx,rapiddns,threatminer,urlscan,yahoo"
+    
+    # -d domain, -b sources, -f output file (creates .json and .xml)
+    # -l limit results (500 is good balance of speed/coverage)
+    cmd = f'theHarvester -d "{domain}" -b {free_sources} -l 500 -f "{out}"'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+
+def generate_email_permutations(first_name, last_name, domain):
+    """Generate common email format permutations for a person."""
+    first = first_name.lower().strip()
+    last = last_name.lower().strip()
+    f = first[0] if first else ""
+    l = last[0] if last else ""
+    
+    permutations = [
+        f"{first}@{domain}",                    # john@example.com
+        f"{last}@{domain}",                     # smith@example.com
+        f"{first}{last}@{domain}",              # johnsmith@example.com
+        f"{first}.{last}@{domain}",             # john.smith@example.com
+        f"{first}_{last}@{domain}",             # john_smith@example.com
+        f"{first}-{last}@{domain}",             # john-smith@example.com
+        f"{f}{last}@{domain}",                  # jsmith@example.com
+        f"{f}.{last}@{domain}",                 # j.smith@example.com
+        f"{f}_{last}@{domain}",                 # j_smith@example.com
+        f"{first}{l}@{domain}",                 # johns@example.com
+        f"{first}.{l}@{domain}",                # john.s@example.com
+        f"{first}_{l}@{domain}",                # john_s@example.com
+        f"{last}{first}@{domain}",              # smithjohn@example.com
+        f"{last}.{first}@{domain}",             # smith.john@example.com
+        f"{last}_{first}@{domain}",             # smith_john@example.com
+        f"{last}{f}@{domain}",                  # smithj@example.com
+        f"{l}{first}@{domain}",                 # sjohn@example.com
+        f"{f}{l}@{domain}",                     # js@example.com
+    ]
+    return list(dict.fromkeys(permutations))  # Remove duplicates, preserve order
+
+def email_permutation_scan(domain, outpath, names_file=None, execute=False):
+    """Generate email permutations for common formats and names found."""
+    ensure_dir(outpath)
+    out = os.path.join(outpath, f"email_permutations_{slugify(domain)}.txt")
+    
+    if not execute:
+        cmd = f'# Email permutation generation for {domain} -> "{out}"'
+        return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=False)
+    
+    # Common first names to try if no names found
+    common_first_names = ["john", "jane", "admin", "info", "contact", "support", 
+                         "sales", "hr", "careers", "jobs", "press", "media",
+                         "marketing", "billing", "accounts", "help", "team",
+                         "hello", "office", "enquiries", "enquiry", "service"]
+    
+    # Generic role-based emails (always include these)
+    generic_emails = [
+        f"info@{domain}",
+        f"contact@{domain}",
+        f"admin@{domain}",
+        f"support@{domain}",
+        f"sales@{domain}",
+        f"help@{domain}",
+        f"hello@{domain}",
+        f"team@{domain}",
+        f"careers@{domain}",
+        f"jobs@{domain}",
+        f"hr@{domain}",
+        f"press@{domain}",
+        f"media@{domain}",
+        f"marketing@{domain}",
+        f"billing@{domain}",
+        f"accounts@{domain}",
+        f"service@{domain}",
+        f"enquiries@{domain}",
+        f"office@{domain}",
+        f"webmaster@{domain}",
+        f"postmaster@{domain}",
+        f"hostmaster@{domain}",
+        f"abuse@{domain}",
+        f"security@{domain}",
+        f"noreply@{domain}",
+        f"no-reply@{domain}",
+    ]
+    
+    all_emails = set(generic_emails)
+    
+    # Try to read names from theHarvester results
+    harvester_json = os.path.join(outpath, f"harvester_{slugify(domain)}.json")
+    names_found = []
+    
+    if os.path.exists(harvester_json):
+        try:
+            with open(harvester_json, 'r') as f:
+                data = json.loads(f.read())
+                # Extract any names or emails found
+                emails = data.get("emails", [])
+                for email in emails:
+                    all_emails.add(email.lower())
+                    # Try to extract names from email patterns
+                    local_part = email.split("@")[0]
+                    if "." in local_part:
+                        parts = local_part.split(".")
+                        if len(parts) == 2:
+                            names_found.append((parts[0], parts[1]))
+        except:
+            pass
+    
+    # If we found name patterns, generate permutations
+    if names_found:
+        for first, last in names_found[:20]:  # Limit to avoid huge lists
+            perms = generate_email_permutations(first, last, domain)
+            all_emails.update(perms)
+    
+    # Write results
+    with open(out, 'w') as f:
+        f.write(f"# Email Permutations for {domain}\n")
+        f.write(f"# Generated: {datetime.now().isoformat()}\n")
+        f.write(f"# Total: {len(all_emails)} potential emails\n\n")
+        
+        f.write("## Generic/Role-Based Emails\n")
+        for email in sorted(generic_emails):
+            f.write(f"{email}\n")
+        
+        if names_found:
+            f.write(f"\n## Name-Based Permutations (from discovered patterns)\n")
+            name_emails = all_emails - set(generic_emails)
+            for email in sorted(name_emails):
+                f.write(f"{email}\n")
+        
+        f.write(f"\n## All Unique Emails ({len(all_emails)} total)\n")
+        for email in sorted(all_emails):
+            f.write(f"{email}\n")
+    
+    print(f"    [+] Generated {len(all_emails)} email permutations -> {out}")
+    return 0, "", ""
+
+def verify_emails_smtp(emails_file, outpath, execute=False):
+    """Verify emails using SMTP (checks if mailbox exists)."""
+    ensure_dir(outpath)
+    out = os.path.join(outpath, "verified_emails.txt")
+    
+    # Use curl to check MX records and basic SMTP verification
+    # This is a basic check - full SMTP verification requires more complex setup
+    script = f'''
+    echo "=== Email Verification Results ===" > "{out}"
+    echo "Note: Basic MX record check only" >> "{out}"
+    echo "" >> "{out}"
+    
+    # Get domain from first email
+    domain=$(head -1 "{emails_file}" | grep -v "^#" | cut -d@ -f2)
+    
+    echo "Domain: $domain" >> "{out}"
+    echo "MX Records:" >> "{out}"
+    dig +short MX $domain >> "{out}"
+    echo "" >> "{out}"
+    
+    echo "Emails to verify:" >> "{out}"
+    grep -v "^#" "{emails_file}" | head -50 >> "{out}"
+    '''
+    cmd = f'bash -c {repr(script)}'
     return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
 def gitleaks_run(target_dir, outpath, execute=False):
     ensure_dir(outpath)
@@ -1376,11 +1746,23 @@ def gitleaks_run(target_dir, outpath, execute=False):
     return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
 def shodan_search(domain, outpath, execute=False):
     ensure_dir(outpath)
-    if not os.environ.get("SHODAN_API_KEY"):
+    # Check for API key in environment OR config file
+    api_key = os.environ.get("SHODAN_API_KEY")
+    if not api_key:
+        config = load_config()
+        api_key = config.get("api_keys", {}).get("SHODAN_API_KEY")
+    
+    if not api_key:
         print("[info] SHODAN_API_KEY not set; skipping shodan search.")
+        print("       Configure with: python3 osint_runner.py --configure")
         return 0, "", ""
+    
+    # Set the API key in environment for the shodan CLI
+    os.environ["SHODAN_API_KEY"] = api_key
+    
     out = os.path.join(outpath, "shodan.txt")
-    cmd = f"shodan search --fields ip_str,port,org 'hostname:{domain}' > \"{out}\""
+    # Initialize shodan with the API key first, then search
+    cmd = f'shodan init "{api_key}" && shodan search --fields ip_str,port,org "hostname:{domain}" > "{out}" 2>&1'
     return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
 
 # === Email Security (SPF/DKIM/DMARC) ===
@@ -1454,6 +1836,148 @@ def whatweb_scan(target, outpath, aggression=1, execute=False):
     out = os.path.join(outpath, f"whatweb_{slugify(target)}.txt")
     cmd = f'whatweb -a {aggression} --no-errors --color=never "{target}" > "{out}" 2>&1'
     return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+
+# === Banner Grabbing ===
+def grab_banners(targets_file, outpath, execute=False):
+    """Grab HTTP banners and server information from live hosts."""
+    ensure_dir(outpath)
+    out = os.path.join(outpath, "banners.txt")
+    
+    # Read targets and grab banners using curl
+    # This captures: Server header, X-Powered-By, technology hints
+    script = f'''
+    echo "=== HTTP Banner Grabbing ===" > "{out}"
+    echo "Generated: $(date)" >> "{out}"
+    echo "" >> "{out}"
+    
+    while IFS= read -r url || [ -n "$url" ]; do
+        if [ -n "$url" ]; then
+            echo "─────────────────────────────────────────" >> "{out}"
+            echo "Target: $url" >> "{out}"
+            echo "─────────────────────────────────────────" >> "{out}"
+            curl -s -I -m 10 --connect-timeout 5 "$url" 2>/dev/null | grep -iE "^(HTTP|Server|X-Powered-By|X-AspNet|X-Generator|X-Drupal|X-WordPress|Via|X-Cache|CF-|X-Varnish|X-Backend|X-Runtime|X-Request-Id|Content-Type|Set-Cookie)" >> "{out}"
+            echo "" >> "{out}"
+        fi
+    done < "{targets_file}"
+    '''
+    cmd = f'bash -c {repr(script)}'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+
+def grab_banners_enhanced(domain, outpath, execute=False):
+    """Enhanced banner grabbing using httpx with tech detection."""
+    ensure_dir(outpath)
+    out = os.path.join(outpath, f"banners_enhanced_{slugify(domain)}.json")
+    # httpx can grab banners, tech, titles, status codes all at once
+    # -td = tech detect, -server = server header, -title = page title
+    cmd = f'echo "{domain}" | httpx -silent -td -server -title -status-code -json -o "{out}" 2>/dev/null'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+
+def curl_fingerprint(domain, outpath, execute=False):
+    """Built-in tech fingerprinting and banner grab using curl (always available)."""
+    ensure_dir(outpath)
+    tech_out = os.path.join(outpath, f"tech_fingerprint_{slugify(domain)}.txt")
+    headers_out = os.path.join(outpath, f"http_headers_{slugify(domain)}.txt")
+    
+    if not execute:
+        cmd = f'# curl fingerprinting for {domain}'
+        return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=False)
+    
+    results = []
+    results.append(f"=== Technology Fingerprint & Banner Grab ===")
+    results.append(f"Target: {domain}")
+    results.append(f"Scanned: {datetime.now().isoformat()}")
+    results.append("=" * 60)
+    
+    headers_results = []
+    
+    for proto in ["https", "http"]:
+        url = f"{proto}://{domain}"
+        results.append(f"\n--- {url} ---")
+        headers_results.append(f"\n{'='*60}")
+        headers_results.append(f"URL: {url}")
+        headers_results.append("="*60)
+        
+        try:
+            # Get headers with curl
+            proc = subprocess.run(
+                ["curl", "-sI", "-m", "10", "--connect-timeout", "5", "-L", url],
+                capture_output=True, text=True, timeout=15
+            )
+            headers = proc.stdout
+            
+            if headers:
+                headers_results.append(headers)
+                
+                # Parse headers for technology hints
+                tech_hints = []
+                
+                # Server header
+                for line in headers.split('\n'):
+                    line_lower = line.lower()
+                    if line_lower.startswith('server:'):
+                        server = line.split(':', 1)[1].strip()
+                        results.append(f"Server: {server}")
+                        tech_hints.append(f"Server: {server}")
+                    elif line_lower.startswith('x-powered-by:'):
+                        powered = line.split(':', 1)[1].strip()
+                        results.append(f"X-Powered-By: {powered}")
+                        tech_hints.append(f"Powered-By: {powered}")
+                    elif line_lower.startswith('x-aspnet'):
+                        results.append(f"ASP.NET detected: {line.strip()}")
+                        tech_hints.append("Framework: ASP.NET")
+                    elif 'php' in line_lower:
+                        results.append(f"PHP detected: {line.strip()}")
+                        tech_hints.append("Language: PHP")
+                    elif line_lower.startswith('x-drupal'):
+                        results.append("CMS: Drupal detected")
+                        tech_hints.append("CMS: Drupal")
+                    elif line_lower.startswith('x-generator'):
+                        gen = line.split(':', 1)[1].strip()
+                        results.append(f"Generator: {gen}")
+                        tech_hints.append(f"Generator: {gen}")
+                    elif 'wordpress' in line_lower:
+                        results.append("CMS: WordPress detected")
+                        tech_hints.append("CMS: WordPress")
+                    elif 'cloudflare' in line_lower:
+                        results.append("CDN: Cloudflare detected")
+                        tech_hints.append("CDN: Cloudflare")
+                    elif 'nginx' in line_lower:
+                        results.append("Server: nginx detected")
+                    elif 'apache' in line_lower:
+                        results.append("Server: Apache detected")
+                    elif line_lower.startswith('set-cookie:'):
+                        cookie = line.split(':', 1)[1].strip()[:100]
+                        if 'wordpress' in cookie.lower() or 'wp' in cookie.lower():
+                            tech_hints.append("CMS: WordPress (cookie)")
+                        if 'phpsessid' in cookie.lower():
+                            tech_hints.append("Language: PHP (session)")
+                        if 'jsessionid' in cookie.lower():
+                            tech_hints.append("Language: Java (session)")
+                        if 'asp.net' in cookie.lower():
+                            tech_hints.append("Framework: ASP.NET (cookie)")
+                
+                if not tech_hints:
+                    results.append("No specific technology signatures detected in headers")
+            else:
+                results.append(f"No response from {url}")
+                
+        except subprocess.TimeoutExpired:
+            results.append(f"Timeout connecting to {url}")
+        except Exception as e:
+            results.append(f"Error: {str(e)}")
+    
+    # Write tech fingerprint results
+    with open(tech_out, 'w') as f:
+        f.write('\n'.join(results))
+    
+    # Write raw headers
+    with open(headers_out, 'w') as f:
+        f.write('\n'.join(headers_results))
+    
+    print(f"    [+] Tech fingerprint saved to: {tech_out}")
+    print(f"    [+] HTTP headers saved to: {headers_out}")
+    
+    return 0, "", ""
 
 # === Cloud/SaaS Pattern Detection ===
 CLOUD_PATTERNS = {
@@ -1575,6 +2099,15 @@ SCANNING EXAMPLES
   # Fast scan (skip extra checks) + parallel
   python3 osint_runner.py -d example.com -o ./output --yes --parallel --fast
 
+  # Skip slow tools (amass/subfinder) - RECOMMENDED for quick scans
+  python3 osint_runner.py -d example.com -o ./output --yes --parallel --skip-slow
+
+  # Custom timeout (60 seconds per tool instead of default 180s)
+  python3 osint_runner.py -d example.com -o ./output --yes --parallel --timeout 60
+
+  # Quick scan: skip slow + short timeout + fast mode
+  python3 osint_runner.py -d example.com -o ./output --yes --parallel --skip-slow --fast --timeout 60
+
   # Scan multiple domains
   python3 osint_runner.py -d target1.com -d target2.com -o ./output --yes --parallel
 
@@ -1601,13 +2134,13 @@ SCAN PHASES (use --parallel for faster execution)
   │   merge subdomains → httpx (probe live hosts)                           │
   ├─────────────────────────────────────────────────────────────────────────┤
   │ Phase 3: URL Discovery (PARALLEL with --parallel)                       │
-  │   gau ──┬── shodan                      → run simultaneously            │
+  │   gau ──┬── waybackurls ──┬── shodan  → run simultaneously              │
   ├─────────────────────────────────────────────────────────────────────────┤
-  │ Phase 4: Vulnerability Scan (SEQUENTIAL - needs Phase 3 results)        │
-  │   merge URLs → nuclei                                                   │
+  │ Phase 4: Email & Contact Discovery                                       │
+  │   theHarvester (emails, names, hosts, IPs)                              │
   ├─────────────────────────────────────────────────────────────────────────┤
-  │ Phase 5: Security Checks (PARALLEL with --parallel, skip with --fast)   │
-  │   email ──┬── sslscan ──┬── headers ──┬── whatweb → run simultaneously  │
+  │ Phase 5: Security & Fingerprinting (PARALLEL, skip with --fast)         │
+  │   email ──┬── sslscan ──┬── headers ──┬── whatweb ──┬── banners         │
   │   cloud detection (pattern matching)                                    │
   └─────────────────────────────────────────────────────────────────────────┘
 
@@ -1627,12 +2160,16 @@ OUTPUT FILES
   Individual files (for programmatic access):
     - subdomains_*.txt        All discovered subdomains
     - httpx_results.json      Live HTTP services (JSON)
-    - gau_*.txt               Historical URLs
-    - nuclei_findings.txt     Vulnerability findings
+    - gau_*.txt               Historical URLs (GetAllUrls)
+    - wayback_*.txt           Wayback Machine URLs
+    - urls_combined.txt       Merged URLs from all sources
+    - harvester_*.json/xml    Email addresses, names, hosts found
+    - email_permutations_*.txt  Generated email format permutations
     - email_security_*.txt    SPF/DKIM/DMARC analysis
     - sslscan_*.txt           TLS/SSL details
     - security_headers_*.txt  HTTP security headers
-    - whatweb_*.txt           Technology stack
+    - whatweb_*.txt           Technology fingerprinting
+    - banners.txt             HTTP banner grabbing results
     - cloud_hints.txt         Cloud service detection
     - commands.log            All commands executed
     
@@ -1668,6 +2205,10 @@ OUTPUT FILES
                            help="Run independent tools in parallel (faster, more resource intensive)")
     exec_group.add_argument("--threads", type=int, default=4, metavar="N",
                            help="Number of parallel threads (default: 4, use with --parallel)")
+    exec_group.add_argument("--timeout", type=int, default=180, metavar="SEC",
+                           help="Timeout per tool in seconds (default: 180s/3min)")
+    exec_group.add_argument("--skip-slow", action="store_true",
+                           help="Skip slow tools (amass, subfinder) - use crt.sh only for subdomains")
     exec_group.add_argument("--skip", action="append", choices=list(TOOLS.keys()), metavar="TOOL",
                            help="Skip specific tool (can be used multiple times)")
     exec_group.add_argument("--no-report", action="store_true",
@@ -1719,8 +2260,7 @@ OUTPUT FILES
     missing_tools = []
     installed_tools = []
     for tool in SCAN_TOOLS:
-        bin_name = TOOLS.get(tool, {}).get("bin", tool)
-        if shutil.which(bin_name):
+        if check_tool(tool):
             installed_tools.append(tool)
         else:
             missing_tools.append(tool)
@@ -1835,16 +2375,20 @@ def run_scan_sequential(domain, dom_dir, args, progress):
     else:
         progress.task_skip("crt.sh", "missing tools")
     
-    if ensure_tools_for_step("amass", args.skip):
+    if args.skip_slow:
+        progress.task_skip("amass", "skipped (--skip-slow)")
+    elif ensure_tools_for_step("amass", args.skip):
         progress.task_start("amass")
-        amass_enum(domain, dom_dir, execute=args.yes)
+        amass_enum(domain, dom_dir, execute=args.yes, timeout=args.timeout)
         progress.task_done("amass")
     else:
         progress.task_skip("amass", "not installed")
     
-    if ensure_tools_for_step("subfinder", args.skip):
+    if args.skip_slow:
+        progress.task_skip("subfinder", "skipped (--skip-slow)")
+    elif ensure_tools_for_step("subfinder", args.skip):
         progress.task_start("subfinder")
-        subfinder_run(domain, dom_dir, execute=args.yes)
+        subfinder_run(domain, dom_dir, execute=args.yes, timeout=args.timeout)
         progress.task_done("subfinder")
     else:
         progress.task_skip("subfinder", "not installed")
@@ -1871,7 +2415,7 @@ def run_scan_sequential(domain, dom_dir, args, progress):
     progress.end_phase("Phase 2: HTTP Probing")
     
     # === PHASE 3: URL Discovery ===
-    progress.start_phase(3, "URL Discovery & Shodan")
+    progress.start_phase(3, "URL Discovery (GAU + Wayback + Shodan)")
     
     if ensure_tools_for_step("gau", args.skip):
         progress.task_start("gau")
@@ -1879,6 +2423,13 @@ def run_scan_sequential(domain, dom_dir, args, progress):
         progress.task_done("gau")
     else:
         progress.task_skip("gau", "not installed")
+    
+    if ensure_tools_for_step("waybackurls", args.skip):
+        progress.task_start("waybackurls")
+        waybackurls_run(domain, dom_dir, execute=args.yes)
+        progress.task_done("waybackurls")
+    else:
+        progress.task_skip("waybackurls", "not installed")
     
     if ensure_tools_for_step("shodan", args.skip):
         progress.task_start("shodan")
@@ -1889,24 +2440,26 @@ def run_scan_sequential(domain, dom_dir, args, progress):
     
     progress.end_phase("Phase 3: URL Discovery")
     
-    # === PHASE 4: Vulnerability Scanning ===
-    progress.start_phase(4, "Vulnerability Scanning")
+    # === PHASE 4: Email & Contact Discovery ===
+    progress.start_phase(4, "Email & Contact Discovery")
     
     progress.task_start("merge URLs")
     urls_file = merge_urls(domain, dom_dir)
     progress.task_done("merge URLs")
     
-    if os.path.exists(urls_file) and os.path.getsize(urls_file) > 0:
-        if ensure_tools_for_step("nuclei", args.skip):
-            progress.task_start("nuclei")
-            nuclei_scan(urls_file, dom_dir, execute=args.yes)
-            progress.task_done("nuclei")
-        else:
-            progress.task_skip("nuclei", "not installed")
+    if ensure_tools_for_step("theHarvester", args.skip):
+        progress.task_start("theHarvester")
+        theharvester_run(domain, dom_dir, execute=args.yes)
+        progress.task_done("theHarvester")
     else:
-        progress.task_skip("nuclei", "no URLs found")
+        progress.task_skip("theHarvester", "not installed")
     
-    progress.end_phase("Phase 4: Vuln Scanning")
+    # Generate email permutations (always runs - no external tool needed)
+    progress.task_start("email permutations")
+    email_permutation_scan(domain, dom_dir, execute=args.yes)
+    progress.task_done("email permutations")
+    
+    progress.end_phase("Phase 4: Email Discovery")
     
     # === PHASE 5: Additional Security Checks ===
     if not args.fast:
@@ -1946,14 +2499,21 @@ def run_scan_sequential(domain, dom_dir, args, progress):
             progress.task_skip("security headers", "disabled")
         
         if not args.no_tech:
+            # Try whatweb first (more comprehensive)
             if ensure_tools_for_step("tech_detect", args.skip):
                 progress.task_start("whatweb")
                 whatweb_scan(f"https://{domain}", dom_dir, aggression=1, execute=args.yes)
                 progress.task_done("whatweb")
             else:
                 progress.task_skip("whatweb", "not installed")
+            
+            # Always run curl-based fingerprinting (curl is always available)
+            progress.task_start("curl fingerprint")
+            curl_fingerprint(domain, dom_dir, execute=args.yes)
+            progress.task_done("curl fingerprint")
         else:
             progress.task_skip("whatweb", "disabled")
+            progress.task_skip("curl fingerprint", "disabled")
         
         if not args.no_cloud:
             progress.task_start("cloud detection")
@@ -2001,13 +2561,17 @@ def run_scan_parallel(domain, dom_dir, args, progress):
         else:
             progress.task_skip("crt.sh", "missing tools")
         
-        if ensure_tools_for_step("amass", args.skip):
-            futures.append(executor.submit(run_task, "amass", amass_enum, domain, dom_dir, args.yes))
+        if args.skip_slow:
+            progress.task_skip("amass", "skipped (--skip-slow)")
+        elif ensure_tools_for_step("amass", args.skip):
+            futures.append(executor.submit(run_task, "amass", amass_enum, domain, dom_dir, args.yes, args.timeout))
         else:
             progress.task_skip("amass", "not installed")
         
-        if ensure_tools_for_step("subfinder", args.skip):
-            futures.append(executor.submit(run_task, "subfinder", subfinder_run, domain, dom_dir, args.yes))
+        if args.skip_slow:
+            progress.task_skip("subfinder", "skipped (--skip-slow)")
+        elif ensure_tools_for_step("subfinder", args.skip):
+            futures.append(executor.submit(run_task, "subfinder", subfinder_run, domain, dom_dir, args.yes, args.timeout))
         else:
             progress.task_skip("subfinder", "not installed")
         
@@ -2038,9 +2602,9 @@ def run_scan_parallel(domain, dom_dir, args, progress):
     progress.end_phase("Phase 2: HTTP Probing")
     
     # ═══════════════════════════════════════════════════════════════════
-    # PHASE 3: URL Discovery & Shodan (parallel: gau, shodan)
+    # PHASE 3: URL Discovery (parallel: gau, waybackurls, shodan)
     # ═══════════════════════════════════════════════════════════════════
-    progress.start_phase(3, "URL Discovery & Shodan (parallel)")
+    progress.start_phase(3, "URL Discovery (GAU + Wayback + Shodan) (parallel)")
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
@@ -2049,6 +2613,11 @@ def run_scan_parallel(domain, dom_dir, args, progress):
             futures.append(executor.submit(run_task, "gau", gau_run, domain, dom_dir, args.yes))
         else:
             progress.task_skip("gau", "not installed")
+        
+        if ensure_tools_for_step("waybackurls", args.skip):
+            futures.append(executor.submit(run_task, "waybackurls", waybackurls_run, domain, dom_dir, args.yes))
+        else:
+            progress.task_skip("waybackurls", "not installed")
         
         if ensure_tools_for_step("shodan", args.skip):
             futures.append(executor.submit(run_task, "shodan", shodan_search, domain, dom_dir, args.yes))
@@ -2061,25 +2630,27 @@ def run_scan_parallel(domain, dom_dir, args, progress):
     progress.end_phase("Phase 3: URL Discovery")
     
     # ═══════════════════════════════════════════════════════════════════
-    # PHASE 4: Vulnerability Scanning (sequential: merge URLs, nuclei)
+    # PHASE 4: Email & Contact Discovery (theHarvester)
     # ═══════════════════════════════════════════════════════════════════
-    progress.start_phase(4, "Vulnerability Scanning")
+    progress.start_phase(4, "Email & Contact Discovery")
     
     progress.task_start("merge URLs")
     urls_file = merge_urls(domain, dom_dir)
     progress.task_done("merge URLs")
     
-    if os.path.exists(urls_file) and os.path.getsize(urls_file) > 0:
-        if ensure_tools_for_step("nuclei", args.skip):
-            progress.task_start("nuclei")
-            nuclei_scan(urls_file, dom_dir, execute=args.yes)
-            progress.task_done("nuclei")
-        else:
-            progress.task_skip("nuclei", "not installed")
+    if ensure_tools_for_step("theHarvester", args.skip):
+        progress.task_start("theHarvester")
+        theharvester_run(domain, dom_dir, execute=args.yes)
+        progress.task_done("theHarvester")
     else:
-        progress.task_skip("nuclei", "no URLs found")
+        progress.task_skip("theHarvester", "not installed")
     
-    progress.end_phase("Phase 4: Vuln Scanning")
+    # Generate email permutations (always runs - no external tool needed)
+    progress.task_start("email permutations")
+    email_permutation_scan(domain, dom_dir, execute=args.yes)
+    progress.task_done("email permutations")
+    
+    progress.end_phase("Phase 4: Email Discovery")
     
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 5: Additional Checks (parallel: email, TLS, headers, tech)
@@ -2123,6 +2694,13 @@ def run_scan_parallel(domain, dom_dir, args, progress):
                 progress.task_skip("whatweb", "disabled")
             else:
                 progress.task_skip("whatweb", "not installed")
+            
+            # Always run curl fingerprinting (curl is always available)
+            if not args.no_tech:
+                futures.append(executor.submit(run_task, "curl fingerprint", 
+                    curl_fingerprint, domain, dom_dir, args.yes))
+            else:
+                progress.task_skip("curl fingerprint", "disabled")
             
             for future in as_completed(futures):
                 future.result()

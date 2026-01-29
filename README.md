@@ -26,12 +26,13 @@ Then run the tool inside the WSL2 Ubuntu terminal.
 
 - **Subdomain Enumeration** - amass, subfinder, crt.sh
 - **HTTP Probing** - httpx (discover live hosts)
-- **URL Discovery** - gau (GetAllUrls from Wayback Machine, Common Crawl, etc.)
-- **Vulnerability Scanning** - nuclei (template-based scanner)
+- **URL Discovery** - gau (GetAllUrls) + waybackurls (Wayback Machine historical URLs)
+- **Email & Contact Harvesting** - theHarvester + email format permutation generator
 - **Email Security Analysis** - SPF, DKIM, DMARC record checks
 - **TLS/SSL Analysis** - sslscan (cipher suites, protocols, vulnerabilities)
 - **Security Headers** - HTTP security header analysis
 - **Technology Fingerprinting** - whatweb (identify tech stack)
+- **Banner Grabbing** - HTTP server banners, headers, and technology detection
 - **Cloud/SaaS Detection** - Pattern matching for AWS, Azure, GCP, Cloudflare, etc.
 - **Shodan Integration** - Search for exposed services (requires API key)
 - **Combined Reporting** - All results in a single beautified report with remediation advice
@@ -71,13 +72,14 @@ python3 osint_runner.py --install-tools
 
 Or install manually:
 
-| Tool | Homebrew (macOS) | Apt (Linux) | Go |
-|------|------------------|-------------|-----|
+| Tool | Homebrew (macOS) | Apt (Linux) | Go/Pip |
+|------|------------------|-------------|--------|
 | amass | `brew install amass` | `apt install amass` | `go install github.com/owasp-amass/amass/v4/...@master` |
 | subfinder | `brew install subfinder` | - | `go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest` |
 | httpx | `brew install httpx` | `apt install httpx-toolkit` | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` |
-| gau | - | - | `go install github.com/lc/gau/v2/cmd/gau@latest` |
-| nuclei | `brew install nuclei` | - | `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest` |
+| gau (getallurls) | - | - | `go install github.com/lc/gau/v2/cmd/gau@latest` |
+| waybackurls | - | - | `go install github.com/tomnomnom/waybackurls@latest` |
+| theHarvester | - | `apt install theharvester` | `pip install theHarvester` |
 | sslscan | `brew install sslscan` | `apt install sslscan` | - |
 | whatweb | `brew install whatweb` | `apt install whatweb` | - |
 | shodan | - | - | `pip install shodan` |
@@ -138,6 +140,8 @@ python3 osint_runner.py -d TARGET.com -o ./output -y -p
 | `--yes, -y` | Execute commands (default is dry-run mode) |
 | `--parallel, -p` | Run tools in parallel (faster) |
 | `--threads N` | Number of parallel threads (default: 4) |
+| `--timeout SEC` | Timeout per tool in seconds (default: 180s) |
+| `--skip-slow` | Skip slow tools (amass, subfinder) - use crt.sh only |
 | `--fast, -f` | Skip extra checks (email, TLS, headers, tech, cloud) |
 | `--no-report` | Skip combined report, keep individual files only |
 | `--no-email` | Skip email security checks |
@@ -183,12 +187,15 @@ For programmatic access, individual files are also created:
 | `OSINT_REPORT.txt` | Combined report with all results |
 | `subdomains_*.txt` | All discovered subdomains |
 | `httpx_results.json` | Live HTTP services (JSON format) |
-| `gau_*.txt` | Historical URLs |
-| `nuclei_findings.txt` | Vulnerability findings |
+| `gau_*.txt` | Historical URLs from GetAllUrls |
+| `wayback_*.txt` | URLs from Wayback Machine |
+| `urls_combined.txt` | Merged URLs from all sources |
+| `harvester_*.json` | Email addresses, names, hosts found |
 | `email_security_*.txt` | SPF/DKIM/DMARC analysis |
 | `sslscan_*.txt` | TLS/SSL details |
 | `security_headers_*.txt` | HTTP security headers |
-| `whatweb_*.txt` | Technology stack |
+| `whatweb_*.txt` | Technology fingerprinting |
+| `banners.txt` | HTTP banner grabbing results |
 | `cloud_hints.txt` | Cloud service detection |
 | `commands.log` | All commands executed |
 
@@ -203,13 +210,13 @@ For programmatic access, individual files are also created:
 │   merge subdomains → httpx (probe live hosts)                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Phase 3: URL Discovery (PARALLEL)                                       │
-│   gau ──┬── shodan                      → run simultaneously            │
+│   gau ──┬── waybackurls ──┬── shodan    → run simultaneously            │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ Phase 4: Vulnerability Scan (SEQUENTIAL - needs Phase 3 results)        │
-│   merge URLs → nuclei                                                   │
+│ Phase 4: Email & Contact Discovery                                      │
+│   theHarvester (emails, names, hosts, IPs)                              │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ Phase 5: Security Checks (PARALLEL, skip with --fast)                   │
-│   email ──┬── sslscan ──┬── headers ──┬── whatweb → run simultaneously  │
+│ Phase 5: Security Checks & Fingerprinting (PARALLEL, skip with --fast)  │
+│   email ──┬── sslscan ──┬── headers ──┬── whatweb ──┬── banners         │
 │   cloud detection (pattern matching)                                    │
 └─────────────────────────────────────────────────────────────────────────┘
 
@@ -231,11 +238,27 @@ python3 osint_runner.py -d target.com -o ./pentest_output --yes --parallel --fas
 python3 osint_runner.py -d target1.com -d target2.com -d target3.com -o ./pentest_output --yes --parallel
 ```
 
+### Fast Scanning (Skip Slow Tools)
+
+```bash
+# Skip amass/subfinder (they can take 10+ minutes) - RECOMMENDED
+python3 osint_runner.py -d target.com -o ./output --yes --parallel --skip-slow
+
+# Custom timeout (60 seconds per tool instead of 180s default)
+python3 osint_runner.py -d target.com -o ./output --yes --parallel --timeout 60
+
+# Fastest possible scan: skip slow + fast mode + short timeout
+python3 osint_runner.py -d target.com -o ./output --yes --parallel --skip-slow --fast --timeout 60
+```
+
 ### Automated/Scripted Usage
 
 ```bash
 # No prompts, suitable for cron jobs or CI/CD
 python3 osint_runner.py -d target.com -o ./output --yes --parallel --no-prompt
+
+# Scripted with timeout protection
+python3 osint_runner.py -d target.com -o ./output --yes --parallel --no-prompt --timeout 120
 ```
 
 ### Selective Scanning
@@ -244,8 +267,8 @@ python3 osint_runner.py -d target.com -o ./output --yes --parallel --no-prompt
 # Skip email checks (no MX records)
 python3 osint_runner.py -d target.com -o ./output --yes --no-email
 
-# Only subdomain and vulnerability scanning
-python3 osint_runner.py -d target.com -o ./output --yes --fast
+# Skip slow tools and extra checks (fastest)
+python3 osint_runner.py -d target.com -o ./output --yes --skip-slow --fast
 ```
 
 ## First-Run Wizard
