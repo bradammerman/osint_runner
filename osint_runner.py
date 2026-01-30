@@ -56,25 +56,25 @@ print_lock = threading.Lock()
 
 # === ANSI Color Codes ===
 class Colors:
-    """ANSI color codes for terminal output."""
-    HEADER = '\033[95m'      # Magenta
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    WHITE = '\033[97m'
+    """ANSI color codes for terminal output (dark colors for light backgrounds)."""
+    HEADER = '\033[35m'      # Dark Magenta
+    BLUE = '\033[34m'        # Dark Blue
+    CYAN = '\033[36m'        # Dark Cyan
+    GREEN = '\033[32m'       # Dark Green
+    YELLOW = '\033[33m'      # Dark Yellow/Brown
+    RED = '\033[31m'         # Dark Red
+    WHITE = '\033[30m'       # Black (for light backgrounds)
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
     END = '\033[0m'          # Reset
     
-    # Severity colors
-    CRITICAL = '\033[91m'    # Red
-    HIGH = '\033[38;5;208m'  # Orange
-    MEDIUM = '\033[93m'      # Yellow
-    LOW = '\033[94m'         # Blue
-    INFO = '\033[96m'        # Cyan
-    GOOD = '\033[92m'        # Green
+    # Severity colors (dark variants for light backgrounds)
+    CRITICAL = '\033[31m'    # Dark Red
+    HIGH = '\033[38;5;166m'  # Dark Orange
+    MEDIUM = '\033[33m'      # Dark Yellow/Brown
+    LOW = '\033[34m'         # Dark Blue
+    INFO = '\033[36m'        # Dark Cyan
+    GOOD = '\033[32m'        # Dark Green
 
     @classmethod
     def disable(cls):
