@@ -406,16 +406,17 @@ class ReportGenerator:
         report.append(f"""  1. Executive Summary
   2. Subdomains Discovered
   3. Live Hosts (httpx)
-  4. URLs Discovered (GAU + Wayback Machine)
-  5. Email Security Analysis (SPF/DKIM/DMARC)
-  6. Security Headers Analysis
-  7. TLS/SSL Analysis
-  8. Technology Stack & Fingerprinting
-  9. Banner Grabbing Results
-  10. Cloud/SaaS Detection
-  11. Shodan Intelligence
-  12. Email & Contact Harvesting (theHarvester)
-  13. Findings & Remediation Recommendations
+  4. DNS Resolution (dnsx)
+  5. URLs Discovered (GAU + Wayback Machine)
+  6. Email Security Analysis (SPF/DKIM/DMARC)
+  7. Security Headers Analysis
+  8. TLS/SSL Analysis
+  9. Technology Stack & Fingerprinting
+  10. Banner Grabbing Results
+  11. Cloud/SaaS Detection
+  12. Shodan Intelligence
+  13. Email & Contact Harvesting (theHarvester)
+  14. Findings & Remediation Recommendations
 """)
         
         # Executive Summary
@@ -489,8 +490,49 @@ class ReportGenerator:
         else:
             report.append(f"  {c.YELLOW}HTTP probing not performed.{c.END}\n")
         
+        # DNS Resolution (dnsx)
+        report.append(self._header("4. DNS RESOLUTION (DNSX)"))
+        dnsx_results = self._read_file("dnsx_results.txt")
+        dnsx_json = self._read_file("dnsx_results.json")
+        if dnsx_results and dnsx_results.strip():
+            dns_lines = dnsx_results.strip().split('\n')
+            report.append(f"  {c.BOLD}Resolved Records: {len(dns_lines)}{c.END}\n\n")
+            for line in dns_lines[:50]:  # Limit to 50
+                report.append(f"  {line}\n")
+            if len(dns_lines) > 50:
+                report.append(f"\n  ... and {len(dns_lines) - 50} more records\n")
+        elif dnsx_json and dnsx_json.strip():
+            # Parse JSON format if txt not available
+            records = []
+            for line in dnsx_json.strip().split('\n'):
+                try:
+                    data = json.loads(line)
+                    host = data.get("host", "")
+                    a_records = data.get("a", [])
+                    cname = data.get("cname", [])
+                    if host:
+                        record_str = f"  {host}"
+                        if a_records:
+                            record_str += f" -> {', '.join(a_records[:3])}"
+                        if cname:
+                            record_str += f" (CNAME: {', '.join(cname[:2])})"
+                        records.append(record_str)
+                except:
+                    continue
+            if records:
+                report.append(f"  {c.BOLD}Resolved Hosts: {len(records)}{c.END}\n\n")
+                for rec in records[:50]:
+                    report.append(f"{rec}\n")
+                if len(records) > 50:
+                    report.append(f"\n  ... and {len(records) - 50} more\n")
+            else:
+                report.append(f"  {c.YELLOW}No DNS records resolved.{c.END}\n")
+        else:
+            report.append(f"  {c.YELLOW}DNS resolution not performed.{c.END}\n")
+            report.append(f"  {c.WHITE}Install dnsx: go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest{c.END}\n")
+        
         # URLs Discovered (GAU + Wayback)
-        report.append(self._header("4. URLs DISCOVERED (GAU + WAYBACK MACHINE)"))
+        report.append(self._header("5. URLs DISCOVERED (GAU + WAYBACK MACHINE)"))
         urls_combined = self._read_file("urls_combined.txt") or \
                        self._read_file(f"gau_{self.domain.replace('.', '_')}.txt")
         wayback_urls = self._read_file(f"wayback_{self.domain.replace('.', '_')}.txt")
@@ -520,7 +562,7 @@ class ReportGenerator:
             report.append(f"  {c.YELLOW}URL discovery not performed.{c.END}\n")
         
         # Email Security
-        report.append(self._header("5. EMAIL SECURITY ANALYSIS"))
+        report.append(self._header("6. EMAIL SECURITY ANALYSIS"))
         if email_security:
             # Format nicely
             report.append(f"{c.WHITE}{email_security}{c.END}\n")
@@ -528,7 +570,7 @@ class ReportGenerator:
             report.append(f"  {c.YELLOW}Email security check not performed.{c.END}\n")
         
         # Security Headers
-        report.append(self._header("6. SECURITY HEADERS ANALYSIS"))
+        report.append(self._header("7. SECURITY HEADERS ANALYSIS"))
         if headers_https:
             # Color code the results
             formatted = headers_https
@@ -539,7 +581,7 @@ class ReportGenerator:
             report.append(f"  {c.YELLOW}Security headers check not performed.{c.END}\n")
         
         # TLS/SSL
-        report.append(self._header("7. TLS/SSL ANALYSIS"))
+        report.append(self._header("8. TLS/SSL ANALYSIS"))
         sslscan_file = self._read_file(f"sslscan_{self.domain.replace('.', '_')}.txt") or \
                       self._read_file(f"sslscan_{self.domain}.txt")
         if sslscan_file:
@@ -550,7 +592,7 @@ class ReportGenerator:
             report.append(f"  {c.YELLOW}TLS/SSL check not performed.{c.END}\n")
         
         # Technology Stack
-        report.append(self._header("8. TECHNOLOGY STACK & FINGERPRINTING"))
+        report.append(self._header("9. TECHNOLOGY STACK & FINGERPRINTING"))
         # Try multiple file name formats (slugify converts https://domain.com to https_domain_com)
         whatweb_file = self._read_file(f"whatweb_https_{self.domain.replace('.', '_')}.txt") or \
                       self._read_file(f"whatweb_https_{self.domain}.txt") or \
@@ -563,7 +605,7 @@ class ReportGenerator:
             report.append(f"  {c.WHITE}Install whatweb: brew install whatweb (macOS) or apt install whatweb (Linux){c.END}\n")
         
         # Banner Grabbing
-        report.append(self._header("9. BANNER GRABBING RESULTS"))
+        report.append(self._header("10. BANNER GRABBING RESULTS"))
         banners_file = self._read_file("banners.txt") or \
                       self._read_file(f"banners_{self.domain.replace('.', '_')}.txt")
         banners_enhanced = self._read_file(f"banners_enhanced_{self.domain.replace('.', '_')}.json")
@@ -595,14 +637,14 @@ class ReportGenerator:
             report.append(f"  {c.YELLOW}Banner grabbing not performed.{c.END}\n")
         
         # Cloud Detection
-        report.append(self._header("10. CLOUD/SAAS DETECTION"))
+        report.append(self._header("11. CLOUD/SAAS DETECTION"))
         if cloud_hints:
             report.append(f"{c.WHITE}{cloud_hints}{c.END}\n")
         else:
             report.append(f"  {c.YELLOW}Cloud detection not performed.{c.END}\n")
         
         # Shodan Intelligence
-        report.append(self._header("11. SHODAN INTELLIGENCE"))
+        report.append(self._header("12. SHODAN INTELLIGENCE"))
         shodan_results = self._read_file("shodan.txt")
         if shodan_results and shodan_results.strip():
             report.append(f"{c.WHITE}{shodan_results}{c.END}\n")
@@ -610,7 +652,7 @@ class ReportGenerator:
             report.append(f"  {c.YELLOW}Shodan search not performed (API key required).{c.END}\n")
         
         # Email & Contact Harvesting
-        report.append(self._header("12. EMAIL & CONTACT HARVESTING"))
+        report.append(self._header("13. EMAIL & CONTACT HARVESTING"))
         # theHarvester outputs JSON and XML files
         harvester_json = self._read_file(f"harvester_{self.domain.replace('.', '_')}.json")
         harvester_xml = self._read_file(f"harvester_{self.domain.replace('.', '_')}.xml")
@@ -689,7 +731,7 @@ class ReportGenerator:
 """)
         
         # Findings & Remediation
-        report.append(self._header("13. FINDINGS & REMEDIATION RECOMMENDATIONS"))
+        report.append(self._header("14. FINDINGS & REMEDIATION RECOMMENDATIONS"))
         
         if self.findings:
             # Sort by severity
@@ -829,7 +871,7 @@ class ScanProgress:
         print(f"{'═'*60}")
         print(f"  Mode: {'Parallel' if self.parallel else 'Sequential'}", end="")
         if self.parallel:
-            print(f" ({args.threads} threads)")
+            print(f" ({args.workers} workers)")
         else:
             print()
         print(f"  Fast mode: {'Yes (skipping extra checks)' if self.fast else 'No'}")
@@ -849,8 +891,9 @@ class ScanProgress:
             self._show_tool_status("    ", "subfinder", "subfinder", skip_list)
         
         # Phase 2
-        print("  Phase 2 - HTTP Probing:")
+        print("  Phase 2 - HTTP Probing & DNS Resolution:")
         self._show_tool_status("    ", "httpx", "httpx", skip_list)
+        self._show_tool_status("    ", "dnsx", "dnsx", skip_list)
         
         # Phase 3
         print("  Phase 3 - URL Discovery (GAU + Wayback + Shodan):")
@@ -1166,11 +1209,12 @@ TOOLS = {
     "dig":         {"bin": "dig",         "brew": None,              "apt": "dnsutils"},  # dig is in base macOS
     "sslscan":     {"bin": "sslscan",     "brew": "sslscan",         "apt": "sslscan"},
     "whatweb":     {"bin": "whatweb",     "brew": "whatweb",         "apt": "whatweb"},
+    "dnsx":        {"bin": "dnsx",        "brew": None,              "apt": None,            "go": "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"},
 }
 
 # Tools used in the scan (for status display)
 CORE_TOOLS = ["curl", "jq", "dig", "git"]
-SCAN_TOOLS = ["amass", "subfinder", "httpx", "gau", "waybackurls", "theHarvester", "sslscan", "whatweb", "shodan"]
+SCAN_TOOLS = ["amass", "subfinder", "httpx", "gau", "waybackurls", "theHarvester", "sslscan", "whatweb", "shodan", "dnsx"]
 REQUIRED_FOR_STEP = {
     "crtsh":         ["curl", "jq"],
     "amass":         ["amass"],
@@ -1185,6 +1229,7 @@ REQUIRED_FOR_STEP = {
     "sec_headers":   ["curl"],
     "tech_detect":   ["whatweb"],
     "banner_grab":   ["curl"],
+    "dnsx":          ["dnsx"],
 }
 
 # === Tool Installation ===
@@ -1530,11 +1575,12 @@ def merge_subdomains(domain, outpath):
             except FileNotFoundError:
                 continue
     return merged
-def httpx_probe(subs_file, outpath, execute=False):
+def httpx_probe(subs_file, outpath, execute=False, timeout=180):
     ensure_dir(outpath)
     out_json = os.path.join(outpath, "httpx_results.json")
-    cmd = f'cat "{subs_file}" | httpx -threads 50 -json -o "{out_json}"'
-    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+    # Use -t (short form) for threads to avoid flag conflicts
+    cmd = f'cat "{subs_file}" | httpx -t 50 -json -o "{out_json}"'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute, timeout=timeout)
 def gau_run(domain, outpath, execute=False):
     ensure_dir(outpath)
     out = os.path.join(outpath, f"gau_{slugify(domain)}.txt")
@@ -1784,6 +1830,19 @@ echo ""
 echo "=== DKIM Records (common selectors) ===" && {dkim_checks}
 ) > "{out}" 2>&1'''
     return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute)
+
+# === DNS Resolution (dnsx) ===
+def dnsx_resolve(subs_file, outpath, execute=False, timeout=180):
+    """Resolve DNS records for discovered subdomains using dnsx."""
+    ensure_dir(outpath)
+    out_json = os.path.join(outpath, "dnsx_results.json")
+    out_txt = os.path.join(outpath, "dnsx_results.txt")
+    
+    # dnsx resolves multiple record types: A, AAAA, CNAME, MX, NS, TXT, SOA
+    # -resp shows response, -json for structured output
+    # -t for concurrency (threads), -silent to reduce noise
+    cmd = f'cat "{subs_file}" | dnsx -silent -a -aaaa -cname -mx -ns -txt -resp -o "{out_txt}" -json -output "{out_json}"'
+    return run(cmd, logfile=os.path.join(outpath, "commands.log"), execute=execute, timeout=timeout)
 
 # === TLS/SSL Checks ===
 def sslscan_check(target, outpath, execute=False):
@@ -2093,8 +2152,8 @@ SCANNING EXAMPLES
   # Full scan with parallel execution (faster)
   python3 osint_runner.py -d example.com -o ./output --yes --parallel
 
-  # Full scan with 8 threads for maximum speed
-  python3 osint_runner.py -d example.com -o ./output --yes --parallel --threads 8
+  # Full scan with 8 workers for maximum speed
+  python3 osint_runner.py -d example.com -o ./output --yes --parallel --workers 8
 
   # Fast scan (skip extra checks) + parallel
   python3 osint_runner.py -d example.com -o ./output --yes --parallel --fast
@@ -2131,7 +2190,7 @@ SCAN PHASES (use --parallel for faster execution)
   │   crt.sh ──┬── amass ──┬── subfinder    → run simultaneously            │
   ├─────────────────────────────────────────────────────────────────────────┤
   │ Phase 2: Merge & Probe (SEQUENTIAL - needs Phase 1 results)             │
-  │   merge subdomains → httpx (probe live hosts)                           │
+  │   merge subdomains → httpx (probe live hosts) → dnsx (DNS resolution)   │
   ├─────────────────────────────────────────────────────────────────────────┤
   │ Phase 3: URL Discovery (PARALLEL with --parallel)                       │
   │   gau ──┬── waybackurls ──┬── shodan  → run simultaneously              │
@@ -2160,6 +2219,8 @@ OUTPUT FILES
   Individual files (for programmatic access):
     - subdomains_*.txt        All discovered subdomains
     - httpx_results.json      Live HTTP services (JSON)
+    - dnsx_results.json       DNS resolution records (JSON)
+    - dnsx_results.txt        DNS resolution records (text)
     - gau_*.txt               Historical URLs (GetAllUrls)
     - wayback_*.txt           Wayback Machine URLs
     - urls_combined.txt       Merged URLs from all sources
@@ -2203,8 +2264,8 @@ OUTPUT FILES
                            help="Fast mode: only subdomain enum, httpx, gau, nuclei, shodan")
     exec_group.add_argument("--parallel", "-p", action="store_true",
                            help="Run independent tools in parallel (faster, more resource intensive)")
-    exec_group.add_argument("--threads", type=int, default=4, metavar="N",
-                           help="Number of parallel threads (default: 4, use with --parallel)")
+    exec_group.add_argument("--workers", "-w", type=int, default=4, metavar="N",
+                           help="Number of parallel workers (default: 4, use with --parallel)")
     exec_group.add_argument("--timeout", type=int, default=180, metavar="SEC",
                            help="Timeout per tool in seconds (default: 180s/3min)")
     exec_group.add_argument("--skip-slow", action="store_true",
@@ -2309,7 +2370,7 @@ OUTPUT FILES
     
     mode = "DRY RUN: no commands executed" if not args.yes else "EXECUTION ENABLED"
     if args.parallel:
-        mode += f" (PARALLEL MODE: {args.threads} threads)"
+        mode += f" (PARALLEL MODE: {args.workers} workers)"
     print(mode)
     
     outdir = ensure_dir(args.outdir)
@@ -2317,7 +2378,7 @@ OUTPUT FILES
     with open(log, "a", encoding="utf-8") as f:
         f.write(f"OSINT run started: {datetime.now(UTC).isoformat()}Z\n")
         if args.parallel:
-            f.write(f"Parallel mode enabled with {args.threads} threads\n")
+            f.write(f"Parallel mode enabled with {args.workers} workers\n")
     
     for raw_target in args.domain:
         try:
@@ -2405,14 +2466,23 @@ def run_scan_sequential(domain, dom_dir, args, progress):
     if os.path.exists(subs_file) and os.path.getsize(subs_file) > 0:
         if ensure_tools_for_step("httpx", args.skip):
             progress.task_start("httpx")
-            httpx_probe(subs_file, dom_dir, execute=args.yes)
+            httpx_probe(subs_file, dom_dir, execute=args.yes, timeout=args.timeout)
             progress.task_done("httpx")
         else:
             progress.task_skip("httpx", "not installed")
+        
+        # DNS resolution with dnsx
+        if ensure_tools_for_step("dnsx", args.skip):
+            progress.task_start("dnsx")
+            dnsx_resolve(subs_file, dom_dir, execute=args.yes, timeout=args.timeout)
+            progress.task_done("dnsx")
+        else:
+            progress.task_skip("dnsx", "not installed")
     else:
         progress.task_skip("httpx", "no subdomains found")
+        progress.task_skip("dnsx", "no subdomains found")
     
-    progress.end_phase("Phase 2: HTTP Probing")
+    progress.end_phase("Phase 2: HTTP Probing & DNS")
     
     # === PHASE 3: URL Discovery ===
     progress.start_phase(3, "URL Discovery (GAU + Wayback + Shodan)")
@@ -2531,7 +2601,7 @@ def run_scan_sequential(domain, dom_dir, args, progress):
 
 def run_scan_parallel(domain, dom_dir, args, progress):
     """Run scan in parallel mode for faster execution."""
-    max_workers = args.threads
+    max_workers = args.workers
     
     # Helper to run a task and return result
     def run_task(name, func, *func_args, **func_kwargs):
@@ -2592,14 +2662,23 @@ def run_scan_parallel(domain, dom_dir, args, progress):
     if os.path.exists(subs_file) and os.path.getsize(subs_file) > 0:
         if ensure_tools_for_step("httpx", args.skip):
             progress.task_start("httpx")
-            httpx_probe(subs_file, dom_dir, execute=args.yes)
+            httpx_probe(subs_file, dom_dir, execute=args.yes, timeout=args.timeout)
             progress.task_done("httpx")
         else:
             progress.task_skip("httpx", "not installed")
+        
+        # DNS resolution with dnsx
+        if ensure_tools_for_step("dnsx", args.skip):
+            progress.task_start("dnsx")
+            dnsx_resolve(subs_file, dom_dir, execute=args.yes, timeout=args.timeout)
+            progress.task_done("dnsx")
+        else:
+            progress.task_skip("dnsx", "not installed")
     else:
         progress.task_skip("httpx", "no subdomains found")
+        progress.task_skip("dnsx", "no subdomains found")
     
-    progress.end_phase("Phase 2: HTTP Probing")
+    progress.end_phase("Phase 2: HTTP Probing & DNS")
     
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 3: URL Discovery (parallel: gau, waybackurls, shodan)

@@ -26,6 +26,7 @@ Then run the tool inside the WSL2 Ubuntu terminal.
 
 - **Subdomain Enumeration** - amass, subfinder, crt.sh
 - **HTTP Probing** - httpx (discover live hosts)
+- **DNS Resolution** - dnsx (A, AAAA, CNAME, MX, NS, TXT records)
 - **URL Discovery** - gau (GetAllUrls) + waybackurls (Wayback Machine historical URLs)
 - **Email & Contact Harvesting** - theHarvester + email format permutation generator
 - **Email Security Analysis** - SPF, DKIM, DMARC record checks
@@ -77,6 +78,7 @@ Or install manually:
 | amass | `brew install amass` | `apt install amass` | `go install github.com/owasp-amass/amass/v4/...@master` |
 | subfinder | `brew install subfinder` | - | `go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest` |
 | httpx | `brew install httpx` | `apt install httpx-toolkit` | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` |
+| dnsx | - | - | `go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest` |
 | gau (getallurls) | - | - | `go install github.com/lc/gau/v2/cmd/gau@latest` |
 | waybackurls | - | - | `go install github.com/tomnomnom/waybackurls@latest` |
 | theHarvester | - | `apt install theharvester` | `pip install theHarvester` |
@@ -139,7 +141,7 @@ python3 osint_runner.py -d TARGET.com -o ./output -y -p
 | `-o, --outdir` | Output directory (default: ./osint_out) |
 | `--yes, -y` | Execute commands (default is dry-run mode) |
 | `--parallel, -p` | Run tools in parallel (faster) |
-| `--threads N` | Number of parallel threads (default: 4) |
+| `--workers N, -w` | Number of parallel workers (default: 4) |
 | `--timeout SEC` | Timeout per tool in seconds (default: 180s) |
 | `--skip-slow` | Skip slow tools (amass, subfinder) - use crt.sh only |
 | `--fast, -f` | Skip extra checks (email, TLS, headers, tech, cloud) |
@@ -168,15 +170,17 @@ The report includes:
 1. Executive Summary
 2. Subdomains Discovered
 3. Live Hosts (httpx)
-4. URLs Discovered (GAU)
-5. Email Security Analysis (SPF/DKIM/DMARC)
-6. Security Headers Analysis
-7. TLS/SSL Analysis
-8. Technology Stack
-9. Cloud/SaaS Detection
-10. Shodan Intelligence
-11. Nuclei Vulnerability Findings
-12. Findings & Remediation Recommendations
+4. DNS Resolution (dnsx)
+5. URLs Discovered (GAU + Wayback Machine)
+6. Email Security Analysis (SPF/DKIM/DMARC)
+7. Security Headers Analysis
+8. TLS/SSL Analysis
+9. Technology Stack & Fingerprinting
+10. Banner Grabbing Results
+11. Cloud/SaaS Detection
+12. Shodan Intelligence
+13. Email & Contact Harvesting (theHarvester)
+14. Findings & Remediation Recommendations
 
 ### Individual Files
 
@@ -187,15 +191,19 @@ For programmatic access, individual files are also created:
 | `OSINT_REPORT.txt` | Combined report with all results |
 | `subdomains_*.txt` | All discovered subdomains |
 | `httpx_results.json` | Live HTTP services (JSON format) |
+| `dnsx_results.json` | DNS resolution records (JSON) |
+| `dnsx_results.txt` | DNS resolution records (text) |
 | `gau_*.txt` | Historical URLs from GetAllUrls |
 | `wayback_*.txt` | URLs from Wayback Machine |
 | `urls_combined.txt` | Merged URLs from all sources |
 | `harvester_*.json` | Email addresses, names, hosts found |
+| `email_permutations_*.txt` | Generated email format variations |
 | `email_security_*.txt` | SPF/DKIM/DMARC analysis |
 | `sslscan_*.txt` | TLS/SSL details |
 | `security_headers_*.txt` | HTTP security headers |
 | `whatweb_*.txt` | Technology fingerprinting |
-| `banners.txt` | HTTP banner grabbing results |
+| `tech_fingerprint_*.txt` | Built-in curl fingerprinting |
+| `http_headers_*.txt` | Raw HTTP headers |
 | `cloud_hints.txt` | Cloud service detection |
 | `commands.log` | All commands executed |
 
@@ -207,7 +215,7 @@ For programmatic access, individual files are also created:
 │   crt.sh ──┬── amass ──┬── subfinder    → run simultaneously            │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Phase 2: Merge & Probe (SEQUENTIAL - needs Phase 1 results)             │
-│   merge subdomains → httpx (probe live hosts)                           │
+│   merge subdomains → httpx (probe live hosts) → dnsx (DNS resolution)   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Phase 3: URL Discovery (PARALLEL)                                       │
 │   gau ──┬── waybackurls ──┬── shodan    → run simultaneously            │
